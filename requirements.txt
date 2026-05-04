@@ -1,0 +1,13 @@
+# Core data science
+numpy>=2.4.4
+awkward>=2.9.0
+
+# Data I/O
+PyYAML>=6.0.2
+
+# Visualization
+matplotlib>=3.10.8
+hist>=2.10.1
+
+# MPP-PFlow-Tools
+pflow_analysis

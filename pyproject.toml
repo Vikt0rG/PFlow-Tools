@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pflow-tools"
+version = "0.1.0"
+description = "Tools for cluster regression analysis and visualization"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+    {name = "pflow-tools contributors"}
+]
+dependencies = [
+    "numpy>=2.4.4",
+    "awkward>=2.9.0",
+    "PyYAML>=6.0.2",
+    "matplotlib>=3.10.8",
+    "hist>=2.10.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "isort",
+]
+
+[tool.setuptools]
+packages = ["pflow_tools"]
+
+[tool.setuptools.package-dir]
+"pflow_tools" = "src"
+
+[tool.setuptools.package-data]
+pflow_tools = ["py.typed"]
