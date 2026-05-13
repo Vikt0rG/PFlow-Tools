@@ -7,13 +7,14 @@ matrices for different truth energy fraction ranges.
 """
 
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
+import warnings
 import yaml
 
 import numpy as np
 import hist
 
-from pflow_analysis import h5 as h5_module
+from pflow_tools_max import h5 as h5_module
 from .cluster_regression_plotter import ClusterRegressionPlotter
 
 
@@ -32,6 +33,8 @@ class ClusterRegressionAnalyzer:
         sample_name: str,
         output_dir: str = "./output",
         target_prefix: str = "clusterParticle_EnergyFraction_Full_",
+        residual_particle_type: Optional[str] = None,
+        auto_residual: bool = True,
     ):
         """Initialize the analyzer.
 
@@ -48,6 +51,13 @@ class ClusterRegressionAnalyzer:
         target_prefix : str, optional
             Prefix to remove from target names to get particle types,
             by default "clusterParticle_EnergyFraction_Full_"
+        residual_particle_type : str, optional
+            Particle type to infer as a residual (1 - sum of other predictions)
+            when it is not explicitly regressed. If provided, it will be added
+            to particle_types for plotting.
+        auto_residual : bool, optional
+            If True, infer a residual particle type when exactly one truth
+            particle type is present in the dataset but not in the config targets.
 
         Raises
         ------
@@ -62,6 +72,10 @@ class ClusterRegressionAnalyzer:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.target_prefix = target_prefix
+        self.residual_particle_type = residual_particle_type
+        self.auto_residual = auto_residual
+        self.residual_truth_particle_type: Optional[str] = None
+        self.residual_label: Optional[str] = None
 
         # Load configuration
         self.config = self._load_config()
@@ -75,9 +89,18 @@ class ClusterRegressionAnalyzer:
         # Auto-detect the prediction prefix by looking at available fields
         self.pred_prefix = self._detect_prediction_prefix()
 
+        # Update particle types if a residual should be inferred or forced
+        self._apply_residual_particle_type()
+
+        # Build display labels for plots
+        self._build_particle_type_labels()
+
         # Initialize plotter
         self.plotter = ClusterRegressionPlotter(
-            str(self.output_dir), self.sample_name, self.particle_types
+            str(self.output_dir),
+            self.sample_name,
+            self.particle_types,
+            particle_type_labels=self.particle_type_labels,
         )
 
         print(f"DEBUG: Detected prediction prefix: {self.pred_prefix}")
@@ -95,7 +118,7 @@ class ClusterRegressionAnalyzer:
         return config
 
     def _extract_particle_types(self) -> Tuple[List[str], str]:
-        """Extract particle types and task name from config targets.
+        """Extract to-be-regressed particle types and task name from config targets.
 
         Returns
         -------
@@ -149,6 +172,103 @@ class ClusterRegressionAnalyzer:
         # Fallback if not found
         return ""
 
+    def _collect_truth_particle_types(self) -> List[str]:
+        """Collect particle types from config or truth columns in the dataset.
+
+        Returns
+        -------
+        list
+            Particle type names found in truth columns
+        """
+        truth_particle_types = (
+            self.config.get("data", {}).get("truth_particle_types") if self.config else None
+        )
+        if truth_particle_types:
+            return list(truth_particle_types)
+        else:            
+            warnings.warn("Truth particle types not found in config; auto residual inference may not work.")    
+
+    def _apply_residual_particle_type(self) -> None:
+        """Apply residual particle type handling to particle_types."""
+        # If a residual particle type is explicitly provided, use it and add to particle_types if not present
+        if self.residual_particle_type:
+            self.residual_truth_particle_type = self.residual_particle_type
+            self.residual_label = self.residual_particle_type
+            if self.residual_particle_type not in self.particle_types:
+                self.particle_types.append(self.residual_particle_type)
+            return
+
+        # If auto_residual is disabled or truth particle types are not found, do not attempt to infer a residual particle type
+        if not self.auto_residual or not self._collect_truth_particle_types():
+            return
+
+        # Auto-detect residual particle type if exactly one truth particle type is missing from config targets
+        truth_particle_types = self._collect_truth_particle_types()
+        missing = [t for t in truth_particle_types if t not in self.particle_types]
+        if len(missing) == 1:
+            self.residual_truth_particle_type = missing[0]
+            self.residual_label = str(missing[0])
+            self.residual_particle_type = missing[0]
+            self.particle_types.append(missing[0])
+        elif len(missing) > 1:
+            print(
+                "Warning: Multiple truth particle types are missing from config targets; "
+                "residual particle type inference skipped."
+            )
+
+    def _build_particle_type_labels(self) -> None:
+        """Build display labels aligned with particle_types."""
+        self.particle_type_labels = list(self.particle_types)
+        self._particle_label_map = dict(zip(self.particle_types, self.particle_type_labels))
+
+        if not self.residual_truth_particle_type or not self.residual_label:
+            return
+
+        if self.residual_truth_particle_type in self._particle_label_map:
+            self._particle_label_map[self.residual_truth_particle_type] = self.residual_label
+            self.particle_type_labels = [
+                self._particle_label_map[ptype] for ptype in self.particle_types
+            ]
+
+    def _get_particle_label(self, particle_type: str) -> str:
+        """Get display label for a particle type."""
+        return self._particle_label_map.get(particle_type, particle_type)
+
+    def _get_predicted_fraction(
+        self, particle_type: str, mask: Optional[np.ndarray] = None
+    ) -> np.ndarray:
+        """Get predicted fraction for a particle type.
+
+        If the prediction column is missing and the particle type is marked as
+        residual, compute it as 1 - sum(other predictions).
+        """
+        pred_col = f"{self.pred_prefix}{self.target_prefix}{particle_type}"
+        if pred_col in self.dataset.clusters.fields:
+            data = np.array(self.dataset.clusters[pred_col])
+            return data[mask] if mask is not None else data
+
+        if (
+            self.residual_truth_particle_type
+            and particle_type == self.residual_truth_particle_type
+        ):
+            other_types = [t for t in self.particle_types if t != particle_type]
+            preds = []
+            for other_type in other_types:
+                other_col = f"{self.pred_prefix}{self.target_prefix}{other_type}"
+                if other_col not in self.dataset.clusters.fields:
+                    raise ValueError(
+                        "Residual prediction requires all other particle type "
+                        "predictions to be present."
+                    )
+                other_data = np.array(self.dataset.clusters[other_col])
+                preds.append(other_data[mask] if mask is not None else other_data)
+            summed = np.sum(preds, axis=0)
+            return 1.0 - summed
+
+        raise KeyError(
+            f"Prediction column not found for particle type '{particle_type}'"
+        )
+
     def _get_fracs(
         self, frac_truth: str, down_lim: float, up_lim: float
     ) -> np.ndarray:
@@ -174,9 +294,8 @@ class ClusterRegressionAnalyzer:
         )
 
         predictions = []
-        for i, particle_type in enumerate(self.particle_types):
-            pred_col = f"{self.pred_prefix}clusterParticle_EnergyFraction_Full_{particle_type}"
-            predictions.append(self.dataset.clusters[pred_col][mask])
+        for particle_type in self.particle_types:
+            predictions.append(self._get_predicted_fraction(particle_type, mask))
 
         return np.array(predictions).T
 
@@ -189,12 +308,11 @@ class ClusterRegressionAnalyzer:
             Particle type to plot (e.g., "PHOTONS", "MUON")
         """
         true_col = f"clusterParticle_EnergyFraction_Full_{particle_type}"
-        pred_col = f"{self.pred_prefix}clusterParticle_EnergyFraction_Full_{particle_type}"
-
         x = np.array(self.dataset.clusters[true_col])
-        y = np.array(self.dataset.clusters[pred_col])
+        y = self._get_predicted_fraction(particle_type)
 
-        self.plotter.plot_scatter(x, y, particle_type)
+        label = self._get_particle_label(particle_type)
+        self.plotter.plot_scatter(x, y, label)
 
     def plot_2d_histogram(self, particle_type: str, bins: int = 10) -> None:
         """Create 2D histogram of true vs predicted energy fractions.
@@ -207,12 +325,11 @@ class ClusterRegressionAnalyzer:
             Number of bins for the histogram, by default 10
         """
         true_col = f"clusterParticle_EnergyFraction_Full_{particle_type}"
-        pred_col = f"{self.pred_prefix}clusterParticle_EnergyFraction_Full_{particle_type}"
-
         x = np.array(self.dataset.clusters[true_col])
-        y = np.array(self.dataset.clusters[pred_col])
+        y = self._get_predicted_fraction(particle_type)
 
-        self.plotter.plot_2d_histogram(x, y, particle_type, bins)
+        label = self._get_particle_label(particle_type)
+        self.plotter.plot_2d_histogram(x, y, label, bins)
 
     def plot_energy_fractions(self) -> None:
         """Create energy fraction plots across all particles for different truth ranges.
@@ -259,33 +376,35 @@ class ClusterRegressionAnalyzer:
                     print(
                         f"Warning: No events for {particle_type} in range [{down_lim}, {up_lim}]"
                     )
+                    all_values[tag].append(np.zeros(len(self.particle_type_labels)))
                     continue
 
                 # Create histogram
                 h = hist.Hist(
-                    hist.axis.StrCategory(self.particle_types),
+                    hist.axis.StrCategory(self.particle_type_labels),
                     storage=hist.storage.Weight(),
                 )
 
                 # Fill histogram
                 h.fill(
-                    self.particle_types * len(fracs),
+                    self.particle_type_labels * len(fracs),
                     weight=fracs.flatten() / len(fracs),
                 )
 
                 all_values[tag].append(h.values())
 
             # Plot energy fractions for this particle
+            display_name = self._get_particle_label(particle_type)
             self.plotter.plot_energy_fractions(
-                particle_type, ranges, all_values, tag_to_label, colors
+                display_name, ranges, all_values, tag_to_label, colors
             )
 
-        # Create confusion matrices for each range
+        # Create energy heatmaps for each range
         for tag, values_list in all_values.items():
             if len(values_list) == 0:
                 continue
             title_label = tag_to_label.get(tag, tag)
-            self.plotter.plot_confusion_matrix(values_list, tag, title_label)
+            self.plotter.plot_energy_heatmap(values_list, tag, title_label)
 
     def run_all(self) -> None:
         """Run all analysis steps.
