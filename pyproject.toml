@@ -26,11 +26,15 @@ dev = [
     "isort",
 ]
 
+[project.scripts]
+h5-prep = "utils.h5_prep:main"
+
 [tool.setuptools]
-packages = ["pflow_tools"]
+packages = ["pflow_tools", "utils"]
 
 [tool.setuptools.package-dir]
 "pflow_tools" = "src"
+"utils" = "utils"
 
 [tool.setuptools.package-data]
 pflow_tools = ["py.typed"]
