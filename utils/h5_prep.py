@@ -1,25 +1,27 @@
-#!/usr/bin/env python
-
-# Max's script
-
 import os
 
-import pandas as pd
-import numpy as np
-import h5py
 import yaml
 import argparse
 
+import numpy as np
+import awkward as ak
+import h5py
+import pandas as pd
+
+# Modified Max's script(s)
 
 def list_datasets(h5_fname: str) -> list[str]:
-    """
-    Lists all datasets contained in a given HDF5 file.
+    """Lists all datasets contained in a given HDF5 file.
 
-    Arguments:
-        h5_fname (str): Path to the HDF5 file
+    Parameters
+    ----------
+    h5_fname : str
+        Path to the HDF5 file
 
-    Returns:
-        list[str]:      List of dataset names
+    Returns
+    -------
+    list[str]
+        List of dataset names
     """
     datasets = []
     with h5py.File(h5_fname, 'r') as h5_file:
@@ -30,16 +32,69 @@ def list_datasets(h5_fname: str) -> list[str]:
         h5_file.visititems(add_name_if_ds)
     return datasets
 
+def load_hdf(filepath: str) -> ak.Array:
+    """Loads an HDF5 file into an awkward array
 
-def remove_columns(in_path: str, out_path: str, columns: list[str], dataset: str) -> None:
+    Parameters
+    ----------
+    filepath : str
+        Path to the HDF5 file
+
+    Returns
+    -------
+    ak.array:
+        Awkward array with structure
+            {
+                'dataset0':
+                    {
+                        'column0' : [...],
+                        ...
+                        'columnN' : [...]
+                    },
+                ...
+                'datasetN': {...}
+            }
+
     """
-    Removes columns from a specific dataset in a given HDF5 file and creates a new updated file.
+    datasets = list_datasets(filepath)
 
-    Args: 
-        in_path (str):         Path to the HDF5 file
-        out_path (str):        Path to the output file
-        columns (list[str]):    List of column names to be removed 
-        dataset (str):          Name of the dataset
+    entries = { ds : {} for ds in datasets }
+
+    with h5py.File(filepath, 'r') as test_file:
+        for ds in datasets:
+            dataset = test_file[ds]
+            entry = {
+                column[0]: dataset[column[0]][:] for column in dataset.dtype.descr
+            }
+            entries[ds] = entry
+
+    return ak.Array(entries)
+
+def remove_columns(
+    in_path: str,
+    out_path: str,
+    columns: list[str],
+    dataset: str
+) -> None:
+    """Removes columns from a specific dataset in a given HDF5 file.
+
+    Creates a new modified HDF5 file with the specified columns
+    removed from a specified dataset.
+
+    Parameters
+    ---------- 
+    in_path : str
+        Path to the HDF5 file
+    out_path : str
+        Path to the output file
+    columns : list[str]
+        List of column names to be removed 
+    dataset : str
+        Name of the dataset
+
+    Returns
+    -------
+    None
     """
     datasets = list_datasets(in_path)
 
@@ -78,20 +133,37 @@ def split_datasets(
     shuffle: bool = False, 
     seed: int = 42
 ) -> None:
-    """
-    Splits datasets from a single HDF5 file into training, validation, and optional testing subsets, ensuring consistency across all datasets. 
-    It is assumed that all datasets contain the same number of entries. (!)
+    """Dataset splitting
 
-    Args:
-        in_path (str):          Path to the input file
-        train_path (str):       Path to the output file for the training data
-        fraction_train (float): Size of the training data, will be divided by (train_size + val_size + test_size)
-        val_path (str):         Path to the output file for the validation data
-        fraction_val (float):   Size of the validation data, will be devided by (train_size + val_size + test_size)
-        test_path (str):        Path to the output file for the testing data
-        fraction_test (float):  Size of the testing data, will be devided by (train_size + val_size + test_size)
-        shuffle (bool):         Whether the data should be shuffled before splitting
-        seed (int):             Seed for the data shuffling
+    Splits datasets from a single HDF5 file into training, validation, and
+    optional testing subsets, ensuring consistency across all datasets.
+
+    NOTE: It is assumed that all datasets contain the same number of entries!
+
+    Parameters
+    ----------
+    in_path : str
+        Path to the input file
+    train_path : str
+        Path to the output file for the training data
+    fraction_train : float
+        Size of the training data, will be divided by (train_size + val_size + test_size)
+    val_path : str
+        Path to the output file for the validation data
+    fraction_val : float
+        Size of the validation data, will be devided by (train_size + val_size + test_size)
+    test_path : str
+        Path to the output file for the testing data
+    fraction_test : float
+        Size of the testing data, will be devided by (train_size + val_size + test_size)
+    shuffle : bool
+        Whether the data should be shuffled before splitting
+    seed : int
+        Seed for the data shuffling
+
+    Returns
+    -------
+    None
     """
     datasets = list_datasets(in_path)
     
@@ -132,8 +204,17 @@ def split_datasets(
             if fraction_test == 0 and test_path is not None:
                 datasets_val.append(np.array(ds)[indices][int(training_fraction*len(ds)):])
             else:
-                datasets_val.append(np.array(ds)[indices][int(training_fraction*len(ds)):int((training_fraction+validation_fraction)*len(ds))])
-                datasets_test.append(np.array(ds)[indices][int((training_fraction+validation_fraction)*len(ds)):])
+                datasets_val.append(
+                    np.array(ds)[indices][
+                        int(training_fraction * len(ds)) : 
+                        int((training_fraction + validation_fraction) * len(ds))
+                    ]
+                )
+                datasets_test.append(
+                    np.array(ds)[indices][
+                        int((training_fraction + validation_fraction) * len(ds)):
+                    ]
+                )
 
         os.makedirs(os.path.dirname(train_path), exist_ok=True)
         with h5py.File(train_path, 'w') as training_file:
@@ -156,19 +237,23 @@ def split_datasets(
 
 
 def create_norm_dict(in_path: str, out_path: str = 'norm_dict.yaml') -> None:
-    """
-    Create the norm_dict.yaml file that specifies mean and standard deviation for each quantity in a HDF5 file
+    """norm_dict.yaml creation
 
-    Args:
-        in_path (str):  Path to the input file (should be the training data)
-        out_path (str): Path to the output file (norm_dict.yaml)
+    Create the norm_dict.yaml file to specify mean values and
+    standard deviations for each quantity in a HDF5 file
+
+    Parameters
+    ----------
+    in_path : str
+        Path to the input file (should be the training data)
+    out_path : str
+        Path to the output file (norm_dict.yaml)
     """
     datasets = list_datasets(in_path)
 
     with h5py.File(in_path, 'r') as h5file:
         dataframes = []
         for ds_name in datasets:
-            # Use pandas for mean + std calculation as casting to dict is possible 
             df = pd.DataFrame()
             for col in h5file[ds_name].dtype.names:
                 df[col] = h5file[ds_name][col].flatten()
@@ -188,28 +273,35 @@ def create_norm_dict(in_path: str, out_path: str = 'norm_dict.yaml') -> None:
 
 
 def load_config(filepath: str) -> dict | list:
-    """
-    Load yaml config to list/ dict.
+    """Load yaml config to list/ dict.
 
-    Args:
-        filepath (str): Path to yaml file.
+    Parameters
+    ----------
+    filepath : str
+        Path to yaml file.
 
-    Returns:
-        dict | list:    Returns config as dict or list based on its structure. 
-                        Look into example.yaml for further information.
+    Returns
+    -------
+    dict | list
+        Returns config as dict or list based on its structure. 
+        See example.yaml for more information.
     """
     with open(filepath, 'r') as file:
         return yaml.safe_load(file)
 
 
 def run_config(config: dict | list) -> None: 
-    """
+    """Run commands in the order given in the config file.
+
     Run commands in the order given in the config file with their 
     respective arguments.
 
-    Args:
-        config (dict | list):   Config as {commands: {args: values}} dict or list [{commands: {args: values}}, {...}]. 
-                                The list form is preferred as it enables running the same command multiple times.
+    Parameters
+    ----------
+    config : dict | list
+        Config as {commands: {args: values}} dict or list
+        [{commands: {args: values}}, {...}]. The list form is preferred
+        as it enables running the same command multiple times.
     """
     if isinstance(config, dict):
         for i, (command, kwargs) in enumerate(config.items()):
