@@ -14,7 +14,7 @@ import yaml
 import numpy as np
 import hist
 
-from pflow_tools_max import h5 as h5_module
+from ..utils import h5_prep as h5_module
 from .cluster_regression_plotter import ClusterRegressionPlotter
 
 
