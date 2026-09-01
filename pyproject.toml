@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -33,8 +33,8 @@ h5-prep = "utils.h5_prep:main"
 packages = ["pflow_tools", "utils"]
 
 [tool.setuptools.package-dir]
-"pflow_tools" = "src"
-"utils" = "utils"
+pflow_tools = "src"
+utils = "utils"
 
 [tool.setuptools.package-data]
 pflow_tools = ["py.typed"]
