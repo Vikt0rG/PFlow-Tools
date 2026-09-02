@@ -1,6 +1,7 @@
 #!/bin/bash
 usage() {
-    echo "Script used to run SALT training using predefined base config and a model config path."
+    echo "Script used to run SALT training using predefined base config and a
+          model config path."
     echo "NOTE: Run check_env.sh first before running this script."
     echo ""
     echo "Usage: $0 <REQUIRED ARGUMENTS> [OPTIONAL ARGUMENTS]"
@@ -53,6 +54,7 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 
+# Validate CLI arguments
 if [[ -z "$CONFIG_PATH" ]]; then
     echo "Error: --config is required."
     usage
@@ -64,26 +66,10 @@ if [ ! -f "$CONFIG_PATH" ]; then
 fi
 if [ ! -f "$CONFIG_BASE_PATH" ]; then
     echo "Error: Base config file not found: $CONFIG_BASE_PATH"
+    echo "Please provide a valid base config file using the -b or
+          --base-config option."
     exit 1
 fi
-
-# For some reason I needed data fetching but don't remember why??
-# Fetch training data from config file
-# DATA_PATH=$(python3 -c "
-# import yaml; 
-# with open('$CONFIG_PATH') as f: 
-#     print(yaml.safe_load(f)['data']['train_file'])
-# ") || {
-#     echo "Failed to extract training data path from config"
-#     exit 1
-# }
-# echo "Using training data: $DATA_PATH"
-# 
-# # Verify data file exists
-# if [ ! -f "$DATA_PATH" ]; then
-#     echo "Error: Training data file not found: $DATA_PATH"
-#     exit 1
-# fi
 
 # Run training with SALT
 salt fit -c "$CONFIG_BASE_PATH" -c "$CONFIG_PATH" --force

@@ -3,11 +3,11 @@
 # Utility script to check if the environment is set up correctly.
 # Run this once before executing any other scripts.
 
-# Usage: source check_env.sh [conda_env_name]
+# Usage: `source check_env.sh [conda_env_name]`
 
 # Potential issues:
 # - Conda environment not activated
-#   -> Make sure to run with source and not as a regular script
+#   -> Make sure to run with source and not as a regular script with `bash`
 
 # Check if conda is installed
 if ! command -v conda &> /dev/null; then

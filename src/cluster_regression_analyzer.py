@@ -24,6 +24,34 @@ class ClusterRegressionAnalyzer:
     Provides analysis of cluster regression model outputs including
     scatter plots, 2D histograms, and confusion matrices for different truth
     energy fraction ranges. Uses ClusterRegressionPlotter for visualization.
+
+    Parameters
+    ----------
+    model_predictions_path : str
+        Path to the HDF5 file with model predictions
+    config_path : str
+        Path to the YAML config file used for training
+    sample_name : str
+        Human-readable name for the sample (e.g., "Di-jets", "Drell-Yan")
+    output_dir : str, optional
+        Output directory for plots, by default "./output"
+    target_prefix : str, optional
+        Prefix to remove from target names to get particle types,
+        by default "clusterParticle_EnergyFraction_Full_"
+    residual_particle_type : str, optional
+        Particle type to infer as a residual (1 - sum of other predictions)
+        when it is not explicitly regressed. If provided, it will be added
+        to particle_types for plotting.
+    auto_residual : bool, optional
+        If True, infer a residual particle type when exactly one truth
+        particle type is present in the dataset but not in the config targets.
+
+    Raises
+    ------
+    FileNotFoundError
+        If model prediction file or config file does not exist
+    ValueError
+        If config structure is not recognized
     """
 
     def __init__(
@@ -36,36 +64,6 @@ class ClusterRegressionAnalyzer:
         residual_particle_type: Optional[str] = None,
         auto_residual: bool = True,
     ):
-        """Initialize the analyzer.
-
-        Parameters
-        ----------
-        model_predictions_path : str
-            Path to the HDF5 file with model predictions
-        config_path : str
-            Path to the YAML config file used for training
-        sample_name : str
-            Human-readable name for the sample (e.g., "Di-jets", "Drell-Yan")
-        output_dir : str, optional
-            Output directory for plots, by default "./output"
-        target_prefix : str, optional
-            Prefix to remove from target names to get particle types,
-            by default "clusterParticle_EnergyFraction_Full_"
-        residual_particle_type : str, optional
-            Particle type to infer as a residual (1 - sum of other predictions)
-            when it is not explicitly regressed. If provided, it will be added
-            to particle_types for plotting.
-        auto_residual : bool, optional
-            If True, infer a residual particle type when exactly one truth
-            particle type is present in the dataset but not in the config targets.
-
-        Raises
-        ------
-        FileNotFoundError
-            If model prediction file or config file does not exist
-        ValueError
-            If config structure is not recognized
-        """
         self.model_predictions_path = Path(model_predictions_path)
         self.config_path = Path(config_path)
         self.sample_name = sample_name
@@ -77,10 +75,7 @@ class ClusterRegressionAnalyzer:
         self.residual_truth_particle_type: Optional[str] = None
         self.residual_label: Optional[str] = None
 
-        # Load configuration
         self.config = self._load_config()
-
-        # Load dataset
         self.dataset = h5_module.load_hdf(str(self.model_predictions_path))
 
         # Extract particle types and task name from config

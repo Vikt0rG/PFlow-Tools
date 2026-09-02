@@ -47,7 +47,12 @@ class ClusterRegressionPlotter:
         self.particle_types = particle_types
         self.particle_type_labels = particle_type_labels or particle_types
 
-    def plot_scatter(self, x: np.ndarray, y: np.ndarray, particle_type: str) -> None:
+    def plot_scatter(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        particle_type: str
+    ) -> None:
         """Create scatter plot of true vs predicted energy fractions.
 
         Parameters
@@ -73,7 +78,7 @@ class ClusterRegressionPlotter:
             self.output_dir
             / f"scatter_{self.sample_name.replace(' ', '_')}_{particle_type}.png"
         )
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
         plt.close()
 
         print(f"Saved scatter plot: {output_path}")

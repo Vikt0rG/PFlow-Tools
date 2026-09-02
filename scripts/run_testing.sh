@@ -8,7 +8,8 @@ usage() {
     echo "REQUIRED ARGUMENTS:"
     echo "  -c | --config PATH          Path to the configuration file"
     echo "  -t | --test-file PATH       Path to the test data file"
-    echo "  -d | --devices BOOLEAN      Boolean value for trainer devices, e.g., 1 for using GPU"
+    echo "  -d | --devices BOOLEAN      Boolean value indicating whether to train on GPU (1)
+                                        or CPU (0)"
     echo ""
     echo "OPTIONAL ARGUMENTS:"
     echo "  -h | --help                 Show this help message and exit"
@@ -55,7 +56,7 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 
-# Verify argument files exist
+# Validate CLI arguments
 if [ ! -f "$CONFIG_PATH" ]; then
     echo "Error: Config file not found: $CONFIG_PATH"
     exit 1
