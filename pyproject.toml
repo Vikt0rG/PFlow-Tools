@@ -12,11 +12,11 @@ authors = [
     {name = "pflow-tools contributors"}
 ]
 dependencies = [
-    "numpy>=2.4.4",
-    "awkward>=2.9.0",
-    "PyYAML>=6.0.2",
-    "matplotlib>=3.10.8",
-    "hist>=2.10.1",
+    "numpy>=1.24.0,<3.0.0",
+    "awkward>=2.0.0",
+    "PyYAML>=6.0",
+    "matplotlib>=3.5.0",
+    "hist>=2.6.0",
 ]
 
 [project.optional-dependencies]
@@ -30,11 +30,10 @@ dev = [
 h5-prep = "utils.h5_prep:main"
 
 [tool.setuptools]
-packages = ["pflow_tools", "utils"]
+packages = ["pflow_tools"]
 
 [tool.setuptools.package-dir]
-pflow_tools = "src"
-utils = "utils"
+pflow_tools = "tools"
 
 [tool.setuptools.package-data]
 pflow_tools = ["py.typed"]

@@ -14,7 +14,7 @@ import yaml
 import numpy as np
 import hist
 
-from ..utils import h5_prep as h5_module
+from .utils import h5_prep as h5_module
 from .cluster_regression_plotter import ClusterRegressionPlotter
 
 
@@ -31,8 +31,8 @@ class ClusterRegressionAnalyzer:
         Path to the HDF5 file with model predictions
     config_path : str
         Path to the YAML config file used for training
-    sample_name : str
-        Human-readable name for the sample (e.g., "Di-jets", "Drell-Yan")
+    sample_name : str, optional
+        Human-readable name for the sample (e.g., "Di-jets", "Drell-Yan").
     output_dir : str, optional
         Output directory for plots, by default "./output"
     target_prefix : str, optional
@@ -40,11 +40,11 @@ class ClusterRegressionAnalyzer:
         by default "clusterParticle_EnergyFraction_Full_"
     residual_particle_type : str, optional
         Particle type to infer as a residual (1 - sum of other predictions)
-        when it is not explicitly regressed. If provided, it will be added
-        to particle_types for plotting.
+        when it is not explicitly regressed; if provided, it will be added
+        to particle_types for plotting
     auto_residual : bool, optional
         If True, infer a residual particle type when exactly one truth
-        particle type is present in the dataset but not in the config targets.
+        particle type is present in the dataset but not in the config targets
 
     Raises
     ------
@@ -58,7 +58,7 @@ class ClusterRegressionAnalyzer:
         self,
         model_predictions_path: str,
         config_path: str,
-        sample_name: str,
+        sample_name: Optional[str] = None,
         output_dir: str = "./output",
         target_prefix: str = "clusterParticle_EnergyFraction_Full_",
         residual_particle_type: Optional[str] = None,
@@ -95,7 +95,7 @@ class ClusterRegressionAnalyzer:
             str(self.output_dir),
             self.sample_name,
             self.particle_types,
-            particle_type_labels=self.particle_type_labels,
+            particle_type_labels=self.particle_type_labels
         )
 
         print(f"DEBUG: Detected prediction prefix: {self.pred_prefix}")
@@ -149,9 +149,15 @@ class ClusterRegressionAnalyzer:
         -------
         str
             The prediction column prefix (e.g., "cluster_regression_")
+
+        Raises
+        ------
+        KeyError
+            If no particle types are available to search for
+            If no matching field is found for the first particle type
         """
         if not self.particle_types:
-            return ""
+            raise KeyError("No particle types found to auto-detect prediction prefix")
 
         # First particle type to search for
         first_particle = self.particle_types[0]
@@ -159,13 +165,13 @@ class ClusterRegressionAnalyzer:
 
         # Search through available fields for one matching this suffix
         for field in self.dataset.clusters.fields:
-            if field.endswith(target_suffix):
+            if field.endswith(target_suffix) and len(field) > len(target_suffix):
                 # Extract prefix by removing the suffix
                 prefix = field[:-len(target_suffix)]
                 return prefix
 
-        # Fallback if not found
-        return ""
+        # Raise an error if no matching field is found
+        raise KeyError(f"Could not auto-detect prediction prefix for {target_suffix} in dataset fields!")
 
     def _collect_truth_particle_types(self) -> List[str]:
         """Collect particle types from config or truth columns in the dataset.

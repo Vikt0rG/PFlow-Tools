@@ -1,13 +1,10 @@
-# Core data science
-numpy>=2.4.4
-awkward>=2.9.0
+# Core computational packages
+numpy>=1.24.0,<3.0.0
+awkward>=2.0.0
 
 # Data I/O
-PyYAML>=6.0.2
+PyYAML>=6.0
 
 # Visualization
-matplotlib>=3.10.8
-hist>=2.10.1
-
-# MPP-PFlow-Tools
-pflow_analysis
+matplotlib>=3.5.0
+hist>=2.6.0
