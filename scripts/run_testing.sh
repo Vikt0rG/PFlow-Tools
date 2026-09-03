@@ -28,7 +28,7 @@ while [[ "$#" -gt 0 ]]; do
         -c|--config)
             if [[ -z "$2" ]]; then
                 echo "Error: --config requires a value."
-                usage            
+                usage
             fi
             CONFIG_PATH="$2"
             shift 2
