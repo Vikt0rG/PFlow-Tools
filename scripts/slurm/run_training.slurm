@@ -14,7 +14,7 @@
 
 # Activate environment
 eval "$(conda shell.bash hook)"
-conda activate salt
+conda activate $CONDA_ENV_NAME
 
 # Update comet offline logs directory
 COMET_BASE_DIR="${COMET_OFFLINE_DIRECTORY:-/ptmp/viktorg/SALTImplementation/comet_logs}"
@@ -24,10 +24,9 @@ mkdir -p "$COMET_OFFLINE_DIRECTORY"
 echo "----- JOB INFO -----"
 echo "Node: $(hostname)"
 echo "Job ID: $SLURM_JOB_ID"
-echo "Base Config: $CONFIG_BASE_PATH"
-echo "Model Config: $CONFIG_PATH"
+echo "Model Config Flags: $CONFIG_ARGS"
 echo "Comet Directory: $COMET_OFFLINE_DIRECTORY"
+echo "Conda Environment: $CONDA_ENV_NAME"
 echo "--------------------"
 
-# Execute training
-salt fit -c "$CONFIG_BASE_PATH" -c "$CONFIG_PATH" --force
+salt fit $CONFIG_ARGS --force
