@@ -16,7 +16,7 @@ usage() {
     exit 1
 }
 
-# TODO: Implement data conversion from the .root to .h5
+# TODO: Implement data conversion from .root to .h5
 
 # Process CLI arguments
 while [[ "$#" -gt 0 ]]; do
