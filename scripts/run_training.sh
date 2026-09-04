@@ -1,29 +1,26 @@
 #!/bin/bash
+
 usage() {
-    echo "Script used to run SALT training using predefined base config and a
-          model config path."
+    echo "Script used to run SALT training using predefined base config and
+          a model config path."
     echo "NOTE: Run check_env.sh first before running this script."
     echo ""
     echo "Usage: $0 <REQUIRED ARGUMENTS> [OPTIONAL ARGUMENTS]"
     echo ""
     echo "REQUIRED ARGUMENTS:"
-    echo "  -c | --config PATH          Path to the model configuration file"
+    echo "  -c | --config [<PATH>...]   Path(s) to the model configuration file(s)"
     echo ""
     echo "OPTIONAL ARGUMENTS:"
-    echo "  -b | --base-config PATH     Path to the base config file"
     echo "  -h | --help                 Show this help message and exit"
     echo ""
     echo "EXAMPLES:"
     echo "  $0 -c /path/to/config.yaml"
-    echo "  $0 -c /path/to/config.yaml -b /path/to/base.yaml"
     exit 1
 }
 
-# Paths
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-ROOT_DIR=$(dirname "$SCRIPT_DIR")
 
-CONFIG_BASE_PATH=$ROOT_DIR/salt-mpp-pflow/salt/configs/base.yaml
+CONFIG_PATHS=()
 
 # Process CLI arguments
 while [[ "$#" -gt 0 ]]; do
@@ -32,20 +29,15 @@ while [[ "$#" -gt 0 ]]; do
             usage
             ;;
         -c|--config)
-            if [[ -z "$2" ]]; then
-                echo "Error: --config requires a value."
-                usage
-            fi
-            CONFIG_PATH="$2"
-            shift 2
-            ;;
-        -b|--base-config)
-            if [[ -z "$2" ]]; then
-                echo "Error: --base-config requires a value."
-                usage
-            fi
-            CONFIG_BASE_PATH="$2"
-            shift 2
+            shift
+            while [[ "$#" -gt 0 && ! "$1" =~ ^- ]]; do
+                if [ ! -f "$1" ]; then
+                    echo "Error: Config file not found: $1"
+                    exit 1
+                fi
+                CONFIG_PATHS+=("$(realpath "$1")")
+                shift
+            done
             ;;
         *)
             echo "Unknown parameter passed: $1"
@@ -55,21 +47,16 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 # Validate CLI arguments
-if [[ -z "$CONFIG_PATH" ]]; then
-    echo "Error: --config is required."
+if [[ ${#CONFIG_PATHS[@]} -eq 0 ]]; then
+    echo "Error: At least one --config file must be specified."
     usage
 fi
 
-if [ ! -f "$CONFIG_PATH" ]; then
-    echo "Error: Config file not found: $CONFIG_PATH"
-    exit 1
-fi
-if [ ! -f "$CONFIG_BASE_PATH" ]; then
-    echo "Error: Base config file not found: $CONFIG_BASE_PATH"
-    echo "Please provide a valid base config file using the -b or
-          --base-config option."
-    exit 1
-fi
+CONFIG_ARGS=""
+for cfg in "${CONFIG_PATHS[@]}"; do
+    CONFIG_ARGS="$CONFIG_ARGS -c $cfg"
+done
+CONFIG_ARGS="$(echo "$CONFIG_ARGS" | xargs)"
 
 # Run training with SALT
-salt fit -c "$CONFIG_BASE_PATH" -c "$CONFIG_PATH" --force
+salt fit $CONFIG_ARGS --force
