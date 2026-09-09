@@ -8,7 +8,8 @@ import awkward as ak
 import h5py
 import pandas as pd
 
-# Modified Max's script(s)
+# Extended Max's script(s)
+
 
 def list_datasets(h5_fname: str) -> list[str]:
     """Lists all datasets contained in a given HDF5 file.
@@ -31,6 +32,7 @@ def list_datasets(h5_fname: str) -> list[str]:
 
         h5_file.visititems(add_name_if_ds)
     return datasets
+
 
 def load_hdf(filepath: str) -> ak.Array:
     """Loads an HDF5 file into an awkward array
@@ -69,6 +71,7 @@ def load_hdf(filepath: str) -> ak.Array:
             entries[ds] = entry
 
     return ak.Array(entries)
+
 
 def remove_columns(
     in_path: str,
@@ -120,6 +123,103 @@ def remove_columns(
                     mod_file.create_dataset(d_set, data=ds_mod, maxshape=maxshape)
                 else:
                     mod_file.create_dataset(d_set, data=pflow_file[d_set], maxshape=maxshape)
+
+
+def filter_events(
+    in_path: str,
+    out_path: str,
+    target_columns: list[str] | None = None,
+    prefix: str = "clusterParticle_EnergyFraction_Full_",
+    dataset: str = "clusters",
+) -> None:
+    """Filters out events containing unphysical energy fractions.
+
+    NOTE: Energy fractions equal to -1 are passed as valid, as those are
+    vector-filler values for events with fewer clusters.
+
+    Parameters
+    ----------
+    in_path : str
+        Path to the input HDF5 file
+    out_path : str
+        Path to the output filtered HDF5 file
+    target_columns : list[str] | None
+        Explicit list of target column names to check for physical energy fractions.
+        If None, all columns starting with the specified prefix will be checked.
+    prefix : str
+        Prefix for target columns (used if target_columns is not provided)
+    dataset : str
+        Name of the dataset to check for unphysical energy fractions
+    """
+    datasets = list_datasets(in_path)
+
+    with h5py.File(in_path, 'r') as pflow_file:
+        main_ds = pflow_file[dataset]
+        num_events = len(main_ds)
+
+        # Determine columns to check
+        if target_columns:
+            columns_to_check = [col for col in target_columns if col in main_ds.dtype.names]
+            missing_cols = set(target_columns) - set(columns_to_check)
+            if missing_cols:
+                print(f"Warning: Columns not found in '{dataset}': {missing_cols}")
+        else:
+            columns_to_check = [col for col in main_ds.dtype.names if col.startswith(prefix)]
+
+        if not columns_to_check:
+            print(f"Warning: No valid columns found in '{dataset}'. Copying file as-is.")
+            valid_mask = np.ones(num_events, dtype=bool)
+        else:
+            print(f"Checking {len(columns_to_check)} energy fraction columns in '{dataset}'...")
+            valid_mask = np.ones(num_events, dtype=bool)
+            col_stats = {}
+
+            # Evaluate physical bounds [0.0, 1.0] per column + filler value -1.0
+            for col in columns_to_check:
+                col_data = main_ds[col]
+                valid_values = (col_data >= 0.0) & (col_data <= 1.0) | (col_data == -1.0)
+
+                if col_data.ndim > 1:
+                    event_valid = np.all(valid_values, axis=tuple(range(1, col_data.ndim)))
+                else:
+                    event_valid = valid_values
+
+                # Track invalid events for this specific category
+                invalid_count = int(np.sum(~event_valid))
+                category_name = col.replace(prefix, "") if col.startswith(prefix) else col
+                col_stats[category_name] = invalid_count
+
+                valid_mask &= event_valid
+
+            num_passed = int(np.sum(valid_mask))
+            num_discarded = num_events - num_passed
+
+            print(f"\nFiltering Breakdown for '{in_path}':")
+            print("-" * 65)
+            print(f"{'Category/Column':<40} | {'Invalid Events':<12} | {'% of Total'}")
+            print("-" * 65)
+            for category, inv_cnt in col_stats.items():
+                pct = (inv_cnt / num_events) * 100
+                print(f"{category:<40} | {inv_cnt:<12d} | {pct:6.2f}%")
+            print("-" * 65)
+
+            print(f"\nOverall Summary:")
+            print(f"  Total events  : {num_events}")
+            print(f"  Passed filter : {num_passed} ({num_passed / num_events * 100:.2f}%)")
+            print(f"  Discarded     : {num_discarded} ({num_discarded / num_events * 100:.2f}%)")
+
+        # Write filtered datasets
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with h5py.File(out_path, 'w') as out_file:
+            for ds_name in datasets:
+                ds = pflow_file[ds_name]
+                filtered_data = ds[valid_mask]
+
+                shape = filtered_data.shape
+                maxshape = (h5py.h5s.UNLIMITED) if len(shape) == 1 else (h5py.h5s.UNLIMITED, *shape[1:])
+                out_file.create_dataset(ds_name, data=filtered_data, maxshape=maxshape)
+
+    print(f"\nSaved filtered dataset to: {out_path}\n")
 
 
 def split_datasets(
@@ -303,65 +403,124 @@ def run_config(config: dict | list) -> None:
         [{commands: {args: values}}, {...}]. The list form is preferred
         as it enables running the same command multiple times.
     """
+    handlers = {
+        "filter-events": filter_events,
+        "remove-cols": remove_columns,
+        "split": split_datasets,
+        "normdict": create_norm_dict,
+    }
     if isinstance(config, dict):
         for i, (command, kwargs) in enumerate(config.items()):
             print(f'Running command {i}: {command}')
-            if command == "remove-cols":
-                remove_columns(**kwargs)
-            elif command == "split":
-                split_datasets(**kwargs)
-            elif command == "normdict":
-                create_norm_dict(**kwargs)
+            if command in handlers:
+                handlers[command](**kwargs)
     elif isinstance(config, list):
         counter = 1
         for cmd in config:
             for command, kwargs in cmd.items():
                 print(f'Running command {counter}: {command}')
-                if command == "remove-cols":
-                    remove_columns(**kwargs)
-                elif command == "split":
-                    split_datasets(**kwargs)
-                elif command == "normdict":
-                    create_norm_dict(**kwargs)
+                if command in handlers:
+                    handlers[command](**kwargs)
                 counter += 1
 
 
-def main():
-    """Main entry point for the h5_prep command-line tool."""
+def get_parser() -> argparse.ArgumentParser:
+    """Build and return the command-line argument parser."""
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-c', '--config', type=str, help='Config file that defines the order and arguments of commands to be run. Is ignored when directly running the commands.')
+    parser.add_argument(
+        '-c', '--config', type=str,
+        help='Config file that defines the order and arguments of commands to be run. Is ignored when directly running the commands.'
+    )
     parser.set_defaults(func=(lambda args: run_config(load_config(args.config))))
 
     subparsers = parser.add_subparsers()
+
+    # Subparser: remove-cols
     rc_parser = subparsers.add_parser('remove-cols', help='Remove columns from a dataset')
     rc_parser.add_argument('in_path', type=str, help='Path to the input HDF5 file')
     rc_parser.add_argument('out_path', type=str, help='Path to the output file containing the updated datasets')
-    rc_parser.add_argument('-c', '--columns', nargs='+', type=str, default=['clusterParticleFlavour_Visible','clusterParticlePerFlavourEnergy_Visible','clusterParticleFlavour_Full','clusterParticlePerFlavourEnergy_Full'], help='List of column names that should be removed')
+    rc_parser.add_argument(
+        '-c', '--columns',
+        nargs='+',
+        type=str,
+        default=[
+            'clusterParticleFlavour_Visible',
+            'clusterParticlePerFlavourEnergy_Visible',
+            'clusterParticleFlavour_Full',
+            'clusterParticlePerFlavourEnergy_Full',
+        ],
+        help='List of column names that should be removed',
+    )
     rc_parser.add_argument('-d', '--dataset', type=str, default='clusters', help='Name of the dataset (default=clusters)')
-    rc_parser.set_defaults(func=(lambda args: remove_columns(args.in_path,args.out_path,args.columns,args.dataset)))
+    rc_parser.set_defaults(
+        func=(lambda args: remove_columns(args.in_path, args.out_path, args.columns, args.dataset))
+    )
 
+    # Subparser: split
     sd_parser = subparsers.add_parser('split', help='Split datasets into train, val, test files')
     sd_parser.add_argument('in_path', type=str, help='Path to the HDF5 input file')
     sd_parser.add_argument('train_path', type=str, help='Path to the output file for the training data')
     sd_parser.add_argument('val_path', type=str, help='Path to the output file for the validation data')
-    sd_parser.add_argument('-t','--test_path', type=str, default=None, help='Path to the output file for the testing data')
-    sd_parser.add_argument('--fraction_train', type=float, default=0.7, help='Size of the training data, will be divided by (train_size + val_size + test_size) (default=0.7)')
-    sd_parser.add_argument('--fraction_val', type=float, default=0.3, help='Size of the validation data, will be divided by (train_size + val_size + test_size) (default=0.3)')
-    sd_parser.add_argument('--fraction_test', type=float, default=0.0, help='Size of the testing data, will be divided by (train_size + val_size + test_size) (default=0.0)')
+    sd_parser.add_argument('-t', '--test_path', type=str, default=None, help='Path to the output file for the testing data')
+    sd_parser.add_argument('--fraction_train', type=float, default=0.7, help='Size of the training data (default=0.7)')
+    sd_parser.add_argument('--fraction_val', type=float, default=0.3, help='Size of the validation data (default=0.3)')
+    sd_parser.add_argument('--fraction_test', type=float, default=0.0, help='Size of the testing data (default=0.0)')
     sd_parser.add_argument('--shuffle', action='store_true', default=False, help='Shuffle the datasets')
     sd_parser.add_argument('-s', '--seed', type=int, default=42, help='Seed used for shuffling')
-    sd_parser.set_defaults(func=(lambda args: split_datasets(args.in_path, args.train_path, args.val_path, 
-                                                             args.fraction_train, args.fraction_val, args.test_path, 
-                                                             args.fraction_test, args.shuffle, args.seed)))
-    
+    sd_parser.set_defaults(
+        func=(
+            lambda args: split_datasets(
+                args.in_path,
+                args.train_path,
+                args.val_path,
+                args.fraction_train,
+                args.fraction_val,
+                args.test_path,
+                args.fraction_test,
+                args.shuffle,
+                args.seed,
+            )
+        )
+    )
+
+    # Subparser: normdict
     nd_parser = subparsers.add_parser('normdict', help='Create a normalization dictionary (norm_dict.yaml) for a given HDF5 file')
     nd_parser.add_argument('in_path', type=str, help='Path to the HDF5 input file')
-    nd_parser.add_argument('-o','--out_path', type=str, default='./norm_dict.yaml', help='Path to the output norm_dict.yaml (default=./norm_dict.yaml)')
+    nd_parser.add_argument('-o', '--out_path', type=str, default='./norm_dict.yaml', help='Path to the output norm_dict.yaml (default=./norm_dict.yaml)')
     nd_parser.set_defaults(func=(lambda args: create_norm_dict(args.in_path, args.out_path)))
 
-    cmd = parser.parse_args()
-    cmd.func(cmd)
+    # Subparser: filter-events
+    fe_parser = subparsers.add_parser('filter-events', help='Filter out events with unphysical energy fractions')
+    fe_parser.add_argument('in_path', type=str, help='Path to the input HDF5 file')
+    fe_parser.add_argument('out_path', type=str, help='Path to the output filtered HDF5 file')
+    fe_parser.add_argument(
+        '-t', '--target_columns',
+        nargs='+',
+        type=str,
+        default=None,
+        help='Explicit list of target column names to check for physical energy fractions.'
+    )
+    fe_parser.add_argument('-p', '--prefix', type=str, default='clusterParticle_EnergyFraction_Full_',
+                           help='Prefix for target columns (used if target_columns is not provided)')
+    fe_parser.add_argument('-d', '--dataset', type=str, default='clusters',
+                           help='Name of the dataset (default=clusters)')
+    fe_parser.set_defaults(
+        func=(lambda args: filter_events(args.in_path, args.out_path, args.target_columns, args.prefix, args.dataset))
+    )
+
+    return parser
+
+
+def main():
+    """Main entry point for the h5_prep command-line tool."""
+    parser = get_parser()
+    args = parser.parse_args()
+    
+    if hasattr(args, 'func'):
+        args.func(args)
+    else:
+        parser.print_help()
 
 
 if __name__ == '__main__':
