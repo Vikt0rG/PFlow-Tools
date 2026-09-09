@@ -218,8 +218,8 @@ class ClusterRegressionPlotter:
         Parameters
         ----------
         values : list of np.ndarray
-            List of arrays, one per particle type, containing average predicted
-            energy fractions for each particle category
+            List of arrays, one per particle type, containing average
+            predicted energy fractions for each particle category
         tag : str
             Tag for the output filename
         title_label : str
@@ -232,10 +232,15 @@ class ClusterRegressionPlotter:
         ax.set_xlabel("true particle type")
         ax.set_ylabel("predicted particle type")
 
-        data = np.array(values)
+        from pprint import pprint
+
+        pprint("Values for heatmap:")
+        pprint(values)
+
+        data = np.array(values).T
         size = len(self.particle_type_labels)
         img = ax.imshow(
-            data.T,
+            data,
             origin="lower",
             extent=[0, size, 0, size],
             aspect="auto",
@@ -244,6 +249,22 @@ class ClusterRegressionPlotter:
 
         cbar = plt.colorbar(img, ax=ax)
         cbar.set_label("Average predicted energy fraction")
+
+        threshold = (data.max() + data.min()) / 2.0 if data.size > 0 else 0.5
+        for row in range(data.shape[0]):
+            for col in range(data.shape[1]):
+                val = data[row, col]
+                text_color = "white" if val < threshold else "black"
+
+                ax.text(
+                    col + 0.5,
+                    row + 0.5,
+                    f"{val:.2f}" if val >= 0.01 else ("0" if val == 0 else "<.01"),
+                    ha="center",
+                    va="center",
+                    color=text_color,
+                    fontsize=14,
+                )
 
         ax.set_xticks(np.arange(len(self.particle_type_labels)) + 0.5)
         ax.set_yticks(np.arange(len(self.particle_type_labels)) + 0.5)
