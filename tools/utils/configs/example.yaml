@@ -1,0 +1,45 @@
+# Use dash (-) in front of commands (remove-cols, filter-events, split,
+# normdict) to enable calling the same command multiple times.
+# Commands will be executed in the order of their definition.
+
+# This example config will first remove the columns `example_column_1` 
+# and `example_column_2` from the dataset `clusters`, then filter events
+# based on the target columns `target_column_1` and `target_column_2`,
+# then split the output into training, validation and testing files and
+# finally generate a norm_dict.yaml from the training data.
+
+- remove-cols:
+    dataset: clusters
+    columns:
+      - example_column_1
+      - example_column_2
+  
+    in_path:  /path/to/input.h5
+    out_path: /path/to/output.h5
+
+- filter-events:
+    in_path:  /path/to/output.h5  # From the previous step
+    out_path: /path/to/output_filtered.h5
+
+    dataset: clusters
+    target_columns:
+      - target_column_1
+      - target_column_2
+
+- split:
+    in_path: /path/to/output_filtered.h5
+
+    train_path: /path/to/train.h5
+    val_path:   /path/to/val.h5
+    test_path:  /path/to/test.h5
+
+    fraction_train: 0.6
+    fraction_val: 0.2
+    fraction_test: 0.2
+
+    shuffle: true
+    seed: 42
+
+- normdict:
+    in_path:  /path/to/train.h5
+    out_path: /path/to/norm_dict.yaml
