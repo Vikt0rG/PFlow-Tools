@@ -27,10 +27,10 @@ dev = [
 ]
 
 [project.scripts]
-h5-prep = "utils.h5_prep:main"
+h5-prep = "pflow_tools.utils.h5_prep:main"
 
 [tool.setuptools]
-packages = ["pflow_tools"]
+packages = ["pflow_tools", "pflow_tools.utils"]
 
 [tool.setuptools.package-dir]
 pflow_tools = "tools"
