@@ -12,7 +12,7 @@ usage() {
     echo "OPTIONAL ARGUMENTS:"
     echo "  -t | --test-file PATH       Path to the test data file"
     echo "  -d | --devices BOOLEAN      Boolean value indicating whether to evaluate
-                                        on GPU (1) or CPU (0)". Default: 0.
+                                        on GPU (1) or CPU (0)". Default: 1.
     echo "  -e | --env NAME             Name of the conda environment to use.
                                         Default: salt"
     echo "  -h | --help                 Show this help message and exit"
@@ -88,7 +88,7 @@ fi
 # Export variables and submit the slurm script
 export CONFIG_PATH
 export TEST_FILE_PATH
-export TRAINER_DEVICES="${TRAINER_DEVICES:-0}"  # Default to CPU
+export TRAINER_DEVICES="${TRAINER_DEVICES:-1}"  # Default to GPU
 export CONDA_ENV_NAME="${CONDA_ENV_NAME:-salt}" # Default to "salt" if not provided
 
 echo "Submitting job with:"
