@@ -131,11 +131,9 @@ def filter_events(
     target_columns: list[str] | None = None,
     prefix: str = "clusterParticle_EnergyFraction_Full_",
     dataset: str = "clusters",
+    discard_unset: bool = False
 ) -> None:
     """Filters out events containing unphysical energy fractions.
-
-    NOTE: Energy fractions equal to -1 are passed as valid, as those are
-    vector-filler values for events with fewer clusters.
 
     Parameters
     ----------
@@ -150,6 +148,9 @@ def filter_events(
         Prefix for target columns (used if target_columns is not provided)
     dataset : str
         Name of the dataset to check for unphysical energy fractions
+    discard_unset : bool
+        Whether to discard events with unset energy fractions (-1). If True, only
+        events with all energy fractions strictly in the range [0.0, 1.0] will be kept.
     """
     datasets = list_datasets(in_path)
 
@@ -168,42 +169,92 @@ def filter_events(
 
         if not columns_to_check:
             print(f"Warning: No valid columns found in '{dataset}'. Copying file as-is.")
-            valid_mask = np.ones(num_events, dtype=bool)
+            mask_valid = np.ones(num_events, dtype=bool)
         else:
             print(f"Checking {len(columns_to_check)} energy fraction columns in '{dataset}'...")
-            valid_mask = np.ones(num_events, dtype=bool)
+            mask_valid = np.ones(num_events, dtype=bool)
             col_stats = {}
 
-            # Evaluate physical bounds [0.0, 1.0] per column + filler value -1.0
+            # Evaluate bounds per column
             for col in columns_to_check:
                 col_data = main_ds[col]
-                valid_values = (col_data >= 0.0) & (col_data <= 1.0) | (col_data == -1.0)
 
-                if col_data.ndim > 1:
-                    event_valid = np.all(valid_values, axis=tuple(range(1, col_data.ndim)))
+                # Mutually Exclusive Element-Level Masks
+                mask_is_unset = (col_data == -1.0)
+                mask_is_set = (col_data >= 0.0) & (col_data <= 1.0)
+                mask_is_oob = ~(mask_is_set | mask_is_unset)  # Out of bounds (<0 or >1 and !=-1)
+
+                # Validity rule based on user flag
+                if discard_unset:
+                    mask_is_valid = mask_is_set
                 else:
-                    event_valid = valid_values
+                    mask_is_valid = mask_is_set | mask_is_unset
 
-                # Track invalid events for this specific category
-                invalid_count = int(np.sum(~event_valid))
+                total_clusters = col_data.size
+
+                # Aggregate cluster counts
+                set_cnt = int(np.sum(mask_is_set))
+                unset_cnt = int(np.sum(mask_is_unset))
+                oob_cnt = int(np.sum(mask_is_oob))
+
+                # Event-level validity (Event passes only if ALL its clusters are valid)
+                if col_data.ndim > 1:
+                    mask_event_valid = np.all(mask_is_valid, axis=tuple(range(1, col_data.ndim)))
+                else:
+                    mask_event_valid = mask_is_valid
+
+                invalid_events_cnt = int(np.sum(~mask_event_valid))
+
                 category_name = col.replace(prefix, "") if col.startswith(prefix) else col
-                col_stats[category_name] = invalid_count
+                col_stats[category_name] = {
+                    "set": set_cnt,
+                    "unset": unset_cnt,
+                    "oob": oob_cnt,
+                    "total": total_clusters,
+                    "invalid_events": invalid_events_cnt,
+                }
 
-                valid_mask &= event_valid
+                # Combine with global event mask
+                mask_valid &= mask_event_valid
 
-            num_passed = int(np.sum(valid_mask))
+            num_passed = int(np.sum(mask_valid))
             num_discarded = num_events - num_passed
 
-            print(f"\nFiltering Breakdown for '{in_path}':")
-            print("-" * 65)
-            print(f"{'Category/Column':<40} | {'Invalid Events':<12} | {'% of Total'}")
-            print("-" * 65)
-            for category, inv_cnt in col_stats.items():
-                pct = (inv_cnt / num_events) * 100
-                print(f"{category:<40} | {inv_cnt:<12d} | {pct:6.2f}%")
-            print("-" * 65)
+            # Breakdown Table Printouts
+            print(f"\nFiltering & Cluster Breakdown for '{in_path}':")
+            if discard_unset:
+                print(">>> NOTE: 'discard_unset' is True. Events with Unset (-1) clusters are being discarded.")
+            print("=" * 105)
+            print(
+                f"{'Category/Column':<25} | {'Set [0.0, 1.0]':<18} | {'Unset (-1.0)':<18} | "
+                f"{'OOB (<0 or >1)':<18} | {'Bad Events (%)'}"
+            )
+            print("=" * 105)
 
-            print(f"\nOverall Summary:")
+            for category, stats in col_stats.items():
+                tot = stats["total"]
+
+                # Cluster-level percentages
+                set_pct = (stats["set"] / tot) * 100
+                unset_pct = (stats["unset"] / tot) * 100
+                oob_pct = (stats["oob"] / tot) * 100
+
+                # Event-level percentage
+                bad_events = stats["invalid_events"]
+                bad_events_pct = (bad_events / num_events) * 100
+
+                set_str = f"{stats['set']} ({set_pct:.1f}%)"
+                unset_str = f"{stats['unset']} ({unset_pct:.1f}%)"
+                oob_str = f"{stats['oob']} ({oob_pct:.1f}%)"
+                bad_str = f"{bad_events} ({bad_events_pct:.1f}%)"
+
+                print(
+                    f"{category:<25} | {set_str:<18} | "
+                    f"{unset_str:<18} | {oob_str:<18} | {bad_str}"
+                )
+            print("=" * 105)
+
+            print(f"\nOverall Event Summary:")
             print(f"  Total events  : {num_events}")
             print(f"  Passed filter : {num_passed} ({num_passed / num_events * 100:.2f}%)")
             print(f"  Discarded     : {num_discarded} ({num_discarded / num_events * 100:.2f}%)")
@@ -213,7 +264,7 @@ def filter_events(
         with h5py.File(out_path, 'w') as out_file:
             for ds_name in datasets:
                 ds = pflow_file[ds_name]
-                filtered_data = ds[valid_mask]
+                filtered_data = ds[mask_valid]
 
                 shape = filtered_data.shape
                 maxshape = (h5py.h5s.UNLIMITED) if len(shape) == 1 else (h5py.h5s.UNLIMITED, *shape[1:])
@@ -505,8 +556,10 @@ def get_parser() -> argparse.ArgumentParser:
                            help='Prefix for target columns (used if target_columns is not provided)')
     fe_parser.add_argument('-d', '--dataset', type=str, default='clusters',
                            help='Name of the dataset (default=clusters)')
+    fe_parser.add_argument('--discard-unset', action='store_true', 
+                           help='Discard events containing unset energy fractions (-1).')
     fe_parser.set_defaults(
-        func=(lambda args: filter_events(args.in_path, args.out_path, args.target_columns, args.prefix, args.dataset))
+        func=(lambda args: filter_events(args.in_path, args.out_path, args.target_columns, args.prefix, args.dataset, args.discard_unset))
     )
 
     return parser

@@ -25,6 +25,7 @@
     target_columns:
       - target_column_1
       - target_column_2
+    discard_unset: true
 
 - split:
     in_path: /path/to/output_filtered.h5
