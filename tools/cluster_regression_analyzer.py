@@ -31,6 +31,8 @@ class ClusterRegressionAnalyzer:
         Path to the HDF5 file with model predictions
     config_path : str
         Path to the YAML config file used for training
+    final_activation : bool, optional
+        If True, apply final activation function (e.g., softmax) to predictions
     sample_name : str, optional
         Human-readable name for the sample (e.g., "Di-jets", "Drell-Yan").
     output_dir : str, optional
@@ -58,6 +60,7 @@ class ClusterRegressionAnalyzer:
         self,
         model_predictions_path: str,
         config_path: str,
+        final_activation: bool = False,
         sample_name: Optional[str] = None,
         output_dir: str = "./output",
         target_prefix: str = "clusterParticle_EnergyFraction_Full_",
@@ -66,6 +69,7 @@ class ClusterRegressionAnalyzer:
     ):
         self.model_predictions_path = Path(model_predictions_path)
         self.config_path = Path(config_path)
+        self.final_activation = final_activation
         self.sample_name = sample_name
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -236,35 +240,95 @@ class ClusterRegressionAnalyzer:
         return self._particle_label_map.get(particle_type, particle_type)
 
     def _get_predicted_fraction(
-        self, particle_type: str, mask: Optional[np.ndarray] = None
+        self,
+        particle_type: str,
+        mask: Optional[np.ndarray] = None
     ) -> np.ndarray:
         """Get predicted fraction for a particle type.
 
         If the prediction column is missing and the particle type is marked as
         residual, compute it as 1 - sum(other predictions).
+
+        Parameters
+        ----------
+        particle_type : str
+            Particle type to retrieve predicted fraction for
+        mask : np.ndarray, optional
+            Boolean mask to apply to the predictions, by default None
+
+        Returns
+        -------
+        np.ndarray
+            Predicted fractions for the specified particle type, optionally masked
         """
-        pred_col = f"{self.pred_prefix}{self.target_prefix}{particle_type}"
-        if pred_col in self.dataset.clusters.fields:
-            data = np.array(self.dataset.clusters[pred_col])
+        if not self.final_activation:
+            pred_col = f"{self.pred_prefix}{self.target_prefix}{particle_type}"
+            if pred_col in self.dataset.clusters.fields:
+                data = np.array(self.dataset.clusters[pred_col])
+                return data[mask] if mask is not None else data
+
+            if (
+                self.residual_truth_particle_type
+                and particle_type == self.residual_truth_particle_type
+            ):
+                other_types = [t for t in self.particle_types if t != particle_type]
+                preds = []
+                for other_type in other_types:
+                    other_col = f"{self.pred_prefix}{self.target_prefix}{other_type}"
+                    if other_col not in self.dataset.clusters.fields:
+                        raise ValueError(
+                            "Residual prediction requires all other particle type "
+                            "predictions to be present."
+                        )
+                    other_data = np.array(self.dataset.clusters[other_col])
+                    preds.append(other_data[mask] if mask is not None else other_data)
+                summed = np.sum(preds, axis=0)
+                return 1.0 - summed
+
+            raise KeyError(
+                f"Prediction column not found for particle type '{particle_type}'"
+            )
+
+        # Softmax calculation branch
+        regressed_types = [
+            t for t in self.particle_types 
+            if t != self.residual_truth_particle_type
+        ]
+        
+        logits_list = []
+        for pt in regressed_types:
+            col = f"{self.pred_prefix}{self.target_prefix}{pt}"
+            if col not in self.dataset.clusters.fields:
+                raise KeyError(f"Logit column not found for '{pt}'")
+            logits_list.append(np.array(self.dataset.clusters[col]))
+
+        # If inputs are (344, 50), logits_stack becomes (344, 50, 3)
+        logits_stack = np.stack(logits_list, axis=-1)
+        
+        print(f"DEBUG: logits_stack shape: {logits_stack.shape}, particle_types: {regressed_types}")
+        print(f"DEBUG: logits_stack sample: {logits_stack[0, :5, :]}")
+
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+
+            max_logits = np.nanmax(logits_stack, axis=-1, keepdims=True)
+            exp_logits = np.exp(logits_stack - max_logits)
+            softmax_probs = exp_logits / np.nansum(exp_logits, axis=-1, keepdims=True)
+
+        if particle_type in regressed_types:
+            idx = regressed_types.index(particle_type)
+            data = softmax_probs[..., idx]
             return data[mask] if mask is not None else data
 
         if (
             self.residual_truth_particle_type
             and particle_type == self.residual_truth_particle_type
         ):
-            other_types = [t for t in self.particle_types if t != particle_type]
-            preds = []
-            for other_type in other_types:
-                other_col = f"{self.pred_prefix}{self.target_prefix}{other_type}"
-                if other_col not in self.dataset.clusters.fields:
-                    raise ValueError(
-                        "Residual prediction requires all other particle type "
-                        "predictions to be present."
-                    )
-                other_data = np.array(self.dataset.clusters[other_col])
-                preds.append(other_data[mask] if mask is not None else other_data)
-            summed = np.sum(preds, axis=0)
-            return 1.0 - summed
+            # Sum the probabilities along the particle type axis
+            summed = np.nansum(softmax_probs, axis=-1)
+            data = 1.0 - summed
+            return data[mask] if mask is not None else data
 
         raise KeyError(
             f"Prediction column not found for particle type '{particle_type}'"
