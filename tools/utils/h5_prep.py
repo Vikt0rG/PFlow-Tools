@@ -387,40 +387,58 @@ def split_datasets(
                     test_file.create_dataset(ds_name, data=datasets_test[i], maxshape=ds_maxshapes[i])
 
 
-def create_norm_dict(in_path: str, out_path: str = 'norm_dict.yaml') -> None:
-    """norm_dict.yaml creation
+def create_standardization_dict(in_path: str, out_path: str = 'std_dict.yaml') -> None:
+    """std_dict.yaml creation
 
-    Create the norm_dict.yaml file to specify mean values and
-    standard deviations for each quantity in a HDF5 file
+    Create the std_dict.yaml file to specify mean values and
+    standard deviations for each quantity in a HDF5 file,
+    strictly excluding padded/invalid entries.
 
     Parameters
     ----------
     in_path : str
         Path to the input file (should be the training data)
     out_path : str
-        Path to the output file (norm_dict.yaml)
+        Path to the output file (std_dict.yaml)
     """
     datasets = list_datasets(in_path)
 
+    std_dict = {ds_name: {} for ds_name in datasets}
+
     with h5py.File(in_path, 'r') as h5file:
-        dataframes = []
         for ds_name in datasets:
-            df = pd.DataFrame()
-            for col in h5file[ds_name].dtype.names:
-                df[col] = h5file[ds_name][col].flatten()
-            dataframes.append(df)
+            ds = h5file[ds_name]
+            columns = ds.dtype.names
 
-    norm_dict = {ds_name:{} for ds_name in datasets}
-    for i, ds_name in enumerate(datasets):
-        means = dict(dataframes[i].mean())
-        stds = dict(dataframes[i].std())
+            # Check if 'valid' field exists for masking (e.g., clusters/tracks)
+            has_valid = 'valid' in columns
+            if has_valid: valid_mask = ds['valid'][:].flatten().astype(bool)
+            else: print(
+                f"Warning: Dataset '{ds_name}' does not contain a 'valid' field. ",
+                "All entries will be considered valid."
+            )
 
-        for col, mean in means.items():
-            norm_dict[ds_name][col] = {"mean": float(mean), "std": float(stds[col])}
+            for col in columns:
+                data = ds[col][:].flatten()
+
+                # Apply the mask to exclude padded entries
+                if has_valid: data = data[valid_mask]
+
+                # Protect against completely empty datasets
+                if len(data) == 0:
+                    mean, std = 0.0, 1.0
+                else:
+                    mean = float(np.mean(data))
+                    std = float(np.std(data))
+
+                    # Prevent division by zero during training if a feature is constant
+                    if std == 0.0: std = 1.0
+
+                std_dict[ds_name][col] = {"mean": mean, "std": std}
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, 'w') as norm_file:
-        yaml.dump(norm_dict, norm_file)
+    with open(out_path, 'w') as std_file:
+        yaml.dump(std_dict, std_file, sort_keys=False)
 
 
 def load_config(filepath: str) -> dict | list:
@@ -458,7 +476,7 @@ def run_config(config: dict | list) -> None:
         "filter-events": filter_events,
         "remove-cols": remove_columns,
         "split": split_datasets,
-        "normdict": create_norm_dict,
+        "std-dict": create_standardization_dict,
     }
     if isinstance(config, dict):
         for i, (command, kwargs) in enumerate(config.items()):
@@ -535,11 +553,11 @@ def get_parser() -> argparse.ArgumentParser:
         )
     )
 
-    # Subparser: normdict
-    nd_parser = subparsers.add_parser('normdict', help='Create a normalization dictionary (norm_dict.yaml) for a given HDF5 file')
-    nd_parser.add_argument('in_path', type=str, help='Path to the HDF5 input file')
-    nd_parser.add_argument('-o', '--out_path', type=str, default='./norm_dict.yaml', help='Path to the output norm_dict.yaml (default=./norm_dict.yaml)')
-    nd_parser.set_defaults(func=(lambda args: create_norm_dict(args.in_path, args.out_path)))
+    # Subparser: std-dict
+    sd_parser = subparsers.add_parser('std-dict', help='Create a standardization dictionary (std_dict.yaml) for a given HDF5 file')
+    sd_parser.add_argument('in_path', type=str, help='Path to the HDF5 input file')
+    sd_parser.add_argument('-o', '--out_path', type=str, default='./std_dict.yaml', help='Path to the output std_dict.yaml (default=./std_dict.yaml)')
+    sd_parser.set_defaults(func=(lambda args: create_standardization_dict(args.in_path, args.out_path)))
 
     # Subparser: filter-events
     fe_parser = subparsers.add_parser('filter-events', help='Filter out events with unphysical energy fractions')
