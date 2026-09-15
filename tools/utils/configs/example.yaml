@@ -41,6 +41,6 @@
     shuffle: true
     seed: 42
 
-- normdict:
+- std-dict:
     in_path:  /path/to/train.h5
     out_path: /path/to/norm_dict.yaml
