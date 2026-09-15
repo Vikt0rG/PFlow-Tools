@@ -14,7 +14,8 @@
 
 # Activate environment
 eval "$(conda shell.bash hook)"
-conda activate $CONDA_ENV_NAME
+CONDA_ENV_NAME="${CONDA_ENV_NAME:-salt}"
+conda activate "$CONDA_ENV_NAME"
 
 echo "----- JOB INFO -----"
 echo "Node: $(hostname)"

@@ -1,9 +1,8 @@
 #!/bin/bash
 
 usage() {
-    echo "Script used to run SALT training using predefined base config and
-          a model config path."
-    echo "NOTE: Run check_env.sh first before running this script."
+    echo "Script used to run SALT training with one or more model config files."
+    echo "NOTE: Run 'source scripts/utils/check_env.sh' first before running this script."
     echo ""
     echo "Usage: $0 <REQUIRED ARGUMENTS> [OPTIONAL ARGUMENTS]"
     echo ""
@@ -18,8 +17,6 @@ usage() {
     exit 1
 }
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-
 CONFIG_PATHS=()
 
 # Process CLI arguments
@@ -30,6 +27,10 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         -c|--config)
             shift
+            if [[ "$#" -eq 0 || "$1" =~ ^- ]]; then
+                echo "Error: --config requires at least one file path."
+                usage
+            fi
             while [[ "$#" -gt 0 && ! "$1" =~ ^- ]]; do
                 if [ ! -f "$1" ]; then
                     echo "Error: Config file not found: $1"

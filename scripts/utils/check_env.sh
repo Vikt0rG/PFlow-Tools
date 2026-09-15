@@ -3,7 +3,7 @@
 # Utility script to check if the environment is set up correctly.
 # Run this once before executing any other scripts.
 
-# Usage: `source check_env.sh [conda_env_name]`
+# Usage: `source scripts/utils/check_env.sh [conda_env_name]`
 
 # Potential issues:
 # - Conda environment not activated
@@ -37,7 +37,7 @@ if ! conda env list | grep -q "^$CONDA_ENV_NAME "; then
 fi
 
 # Activate the conda environment
-conda activate $CONDA_ENV_NAME || {
+conda activate "$CONDA_ENV_NAME" || {
     echo "Failed to activate conda environment '$CONDA_ENV_NAME'"
     exit 1
 }

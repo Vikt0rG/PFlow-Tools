@@ -29,6 +29,10 @@ while [[ "$#" -gt 0 ]]; do
         -h|--help) usage ;;
         -c|--config)
             shift
+            if [[ "$#" -eq 0 || "$1" =~ ^- ]]; then
+                echo "Error: --config requires at least one file path."
+                usage
+            fi
             while [[ "$#" -gt 0 && ! "$1" =~ ^- ]]; do
                 if [ ! -f "$1" ]; then
                     echo "Error: Config file not found: $1"

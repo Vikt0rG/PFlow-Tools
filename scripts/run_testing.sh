@@ -2,6 +2,7 @@
 
 usage() {
     echo "Generic script to run SALT evaluation."
+    echo "NOTE: Run 'source scripts/utils/check_env.sh' first before running this script."
     echo ""
     echo "Usage: $0 <REQUIRED ARGUMENTS> [OPTIONAL ARGUMENTS]"
     echo ""
@@ -12,8 +13,8 @@ usage() {
     echo "OPTIONAL ARGUMENTS:"
     echo "  -t | --test-file PATH       Path to the HDF5 test data file. If not 
                                         specified, inferred from the config file."
-    echo "  -d | --devices BOOLEAN      Boolean value indicating whether to evaluate
-                                        on GPU (1) or CPU (0). Default: 0"
+    echo "  -d | --devices VALUE        Value passed to '--trainer.devices'
+                                        (e.g. 0 for CPU, 1 for one GPU). Default: 0"
     echo "  -h | --help                 Show this help message and exit"
     echo ""
     echo "EXAMPLES:"
@@ -36,10 +37,18 @@ while [[ "$#" -gt 0 ]]; do
             shift 2
             ;;
         -t|--test-file)
+            if [[ -z "$2" ]]; then
+                echo "Error: --test-file requires a value."
+                usage
+            fi
             TEST_FILE_PATH="$2"
             shift 2
             ;;
         -d|--devices)
+            if [[ -z "$2" ]]; then
+                echo "Error: --devices requires a value."
+                usage
+            fi
             TRAINER_DEVICES="$2"
             shift 2
             ;;

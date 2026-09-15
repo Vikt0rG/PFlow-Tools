@@ -8,13 +8,14 @@
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=8G
+#SBATCH --mem=64G
 
-#SBATCH --time=00:10:00
+#SBATCH --time=02:00:00
 
 # Activate environment
 eval "$(conda shell.bash hook)"
-conda activate $CONDA_ENV_NAME
+CONDA_ENV_NAME="${CONDA_ENV_NAME:-salt}"
+conda activate "$CONDA_ENV_NAME"
 
 # Update comet offline logs directory
 COMET_BASE_DIR="${COMET_OFFLINE_DIRECTORY:-/ptmp/viktorg/SALTImplementation/comet_logs}"

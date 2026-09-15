@@ -1,7 +1,7 @@
 #!/bin/bash
 usage() {
     echo "Script used to prepare datasets using a configuration file."
-    echo "NOTE: Run check_env.sh first before running this script."
+    echo "NOTE: Run 'source scripts/utils/check_env.sh' first before running this script."
     echo ""
     echo "Usage: $0 <REQUIRED ARGUMENTS> [OPTIONAL ARGUMENTS]"
     echo ""
@@ -15,8 +15,6 @@ usage() {
     echo "  $0 -c /path/to/config.yaml"
     exit 1
 }
-
-# TODO: Implement data conversion from .root to .h5
 
 # Process CLI arguments
 while [[ "$#" -gt 0 ]]; do

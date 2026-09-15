@@ -11,8 +11,8 @@ usage() {
     echo ""
     echo "OPTIONAL ARGUMENTS:"
     echo "  -t | --test-file PATH       Path to the test data file"
-    echo "  -d | --devices BOOLEAN      Boolean value indicating whether to evaluate
-                                        on GPU (1) or CPU (0)". Default: 1.
+    echo "  -d | --devices VALUE        Value passed to '--trainer.devices'
+                                        (e.g. 0 for CPU, 1 for one GPU). Default: 1"
     echo "  -e | --env NAME             Name of the conda environment to use.
                                         Default: salt"
     echo "  -h | --help                 Show this help message and exit"
@@ -40,10 +40,18 @@ while [[ "$#" -gt 0 ]]; do
             shift 2
             ;;
         -t|--test-file)
+            if [[ -z "$2" ]]; then
+                echo "Error: --test-file requires a value."
+                usage
+            fi
             TEST_FILE_PATH="$2"
             shift 2
             ;;
         -d|--devices)
+            if [[ -z "$2" ]]; then
+                echo "Error: --devices requires a value."
+                usage
+            fi
             TRAINER_DEVICES="$2"
             shift 2
             ;;
@@ -65,6 +73,11 @@ done
 # Validate CLI arguments
 if [ ! -f "$CONFIG_PATH" ]; then
     echo "Error: Config file not found: $CONFIG_PATH"
+    exit 1
+fi
+
+if [ ! -f "$SLURM_SCRIPT" ]; then
+    echo "Error: Slurm script not found: $SLURM_SCRIPT"
     exit 1
 fi
 
