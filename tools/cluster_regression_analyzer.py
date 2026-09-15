@@ -304,9 +304,6 @@ class ClusterRegressionAnalyzer:
 
         # If inputs are (344, 50), logits_stack becomes (344, 50, 3)
         logits_stack = np.stack(logits_list, axis=-1)
-        
-        print(f"DEBUG: logits_stack shape: {logits_stack.shape}, particle_types: {regressed_types}")
-        print(f"DEBUG: logits_stack sample: {logits_stack[0, :5, :]}")
 
         import warnings
         with warnings.catch_warnings():
