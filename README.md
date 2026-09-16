@@ -270,7 +270,7 @@ scripts/slurm/wrapper_run_training.sh -c /path/to/config.yaml -e salt
 
 ```bash
 squeue -u "$USER"
-tail -f /ptmp/viktorg/SALTImplementation/logs/salt_<train_job_id>.err
+tail -f project_root/logs/salt_<train_job_id>.err
 ```
 
 During training, the logs usually include a Comet link. Open that link to monitor
@@ -290,7 +290,7 @@ scripts/slurm/wrapper_run_testing.sh \
 4. Monitor the test job until it succeeds:
 
 ```bash
-tail -f /ptmp/viktorg/SALTImplementation/logs/salt_<test_job_id>.err
+tail -f project_root/logs/salt_<test_job_id>.err
 ```
 
 5. Retrieve the trained checkpoint artifact from the training run directory,
@@ -299,8 +299,16 @@ then use it for downstream analysis.
 Typical checkpoint location:
 
 ```bash
-/ptmp/viktorg/SALTImplementation/comet_logs/salt_job_<train_job_id>/ckpt/
+project_root/comet_logs/salt_training_job_<train_job_id>/ckpt/
 ```
+
+Note: `comet_logs/` directory has to be set up as a global variable in `~/.bashrc` like this:
+
+```bash
+export COMET_OFFLINE_DIRECTORY="project_root/comet_logs"
+```
+
+alongside your Comet API key, workspace and project's name.
 
 The training SLURM script sets COMET_OFFLINE_DIRECTORY automatically per job,
 so the run-specific checkpoint directory follows the same pattern under
